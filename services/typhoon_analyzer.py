@@ -9,7 +9,7 @@ import re
 from typing import Dict, List, Optional
 from openai import OpenAI
 
-from models.schemas import AnalysisResult, LanguageIssue, FieldMatch
+from models.schemas import AnalysisResult, LanguageIssue, FieldMatch, Certificate
 
 logger = logging.getLogger(__name__)
 
@@ -36,30 +36,43 @@ class TyphoonAnalyzer:
         self.model = model
         logger.info(f"Initialized Typhoon analyzer with model: {model}")
 
-    async def analyze_portfolio(self, text: str, target_field: str) -> AnalysisResult:
+    async def analyze_portfolio(
+        self,
+        text: str,
+        target_field: str,
+        judgment_criteria: str = ""
+    ) -> AnalysisResult:
         """
         Analyze portfolio text for formal language and field matching
 
         Args:
             text: Extracted text from portfolio
             target_field: Target field/position
+            judgment_criteria: Custom selection criteria (เกณฑ์การเลือก)
 
         Returns:
             AnalysisResult with complete analysis
         """
         logger.info(f"Analyzing portfolio for target field: {target_field}")
+        if judgment_criteria:
+            logger.info(f"Using custom judgment criteria: {judgment_criteria[:100]}...")
 
         # Analyze formal vs informal language
         language_analysis = await self._analyze_language(text)
 
-        # Analyze field matching
-        field_analysis = await self._analyze_field_match(text, target_field)
+        # Analyze field matching with criteria
+        field_analysis = await self._analyze_field_match(text, target_field, judgment_criteria)
+
+        # Analyze certificates and achievements
+        certificates = await self._analyze_certificates(text, target_field, judgment_criteria)
 
         # Generate overall summary
         summary = await self._generate_summary(
             text=text,
             language_analysis=language_analysis,
-            field_analysis=field_analysis
+            field_analysis=field_analysis,
+            certificates=certificates,
+            judgment_criteria=judgment_criteria
         )
 
         # Build result
@@ -70,6 +83,7 @@ class TyphoonAnalyzer:
             overall_formality_score=language_analysis["formality_score"],
             formality_level=language_analysis["formality_level"],
             field_match=field_analysis,
+            certificates=certificates,
             summary=summary["summary"],
             key_findings=summary["key_findings"]
         )
@@ -179,34 +193,114 @@ class TyphoonAnalyzer:
                 "issues": []
             }
 
-    async def _analyze_field_match(self, text: str, target_field: str) -> FieldMatch:
+    async def _analyze_field_match(
+        self,
+        text: str,
+        target_field: str,
+        judgment_criteria: str = ""
+    ) -> FieldMatch:
         """
         Analyze if portfolio matches target field
 
         Args:
             text: Portfolio text
             target_field: Target field/position
+            judgment_criteria: Custom selection criteria
 
         Returns:
             FieldMatch with analysis results
         """
-        # Field mapping
+        # Expanded field mapping
         field_mapping = {
-            "doctor": "แพทย์, การแพทย์, สาธารณสุข",
-            "engineer": "วิศวกร, วิศวกรรม, เทคโนโลยี",
-            "ai": "AI, ปัญญาประดิษฐ์, วิทยาการข้อมูล, Data Science, Machine Learning",
-            "business": "ธุรกิจ, การจัดการ, บริหาร, การตลาด",
-            "teacher": "ครู, การศึกษา, การสอน, อาจารย์",
+            # Medical & Health
+            "doctor": "แพทย์, การแพทย์, สาธารณสุข, โรงพยาบาล",
             "nurse": "พยาบาล, การพยาบาล, สาธารณสุข",
-            "architect": "สถาปนิก, สถาปัตยกรรม, ออกแบบอาคาร",
+            "dentist": "ทันตแพทย์, ทันตกรรม",
+            "pharmacist": "เภสัชกร, เภสัชศาสตร์, ยา",
+            "medical_tech": "เทคนิคการแพทย์, ห้องปฏิบัติการ",
+            "physical_therapist": "กายภาพบำบัด, ฟื้นฟูสมรรถภาพ",
+            "veterinarian": "สัตวแพทย์, สัตวแพทยศาสตร์",
+
+            # Engineering & Technology
+            "engineer": "วิศวกร, วิศวกรรม, เทคโนโลยี",
+            "software_engineer": "วิศวกรซอฟต์แวร์, โปรแกรมมิ่ง, พัฒนาซอฟต์แวร์",
+            "civil_engineer": "วิศวกรโยธา, ก่อสร้าง, โครงสร้าง",
+            "mechanical_engineer": "วิศวกรเครื่องกล, กลศาสตร์",
+            "electrical_engineer": "วิศวกรไฟฟ้า, ไฟฟ้า, อิเล็กทรอนิกส์",
+            "chemical_engineer": "วิศวกรเคมี, เคมี, กระบวนการเคมี",
+            "industrial_engineer": "วิศวกรอุตสาหการ, การผลิต, ระบบ",
+
+            # IT & Computer Science
+            "ai": "AI, ปัญญาประดิษฐ์, วิทยาการข้อมูล, Data Science, Machine Learning, Deep Learning",
+            "data_scientist": "วิทยาศาสตร์ข้อมูล, วิเคราะห์ข้อมูล, Big Data",
+            "programmer": "โปรแกรมเมอร์, เขียนโปรแกรม, coding",
+            "web_developer": "พัฒนาเว็บ, web development, frontend, backend",
+            "mobile_developer": "แอปพลิเคชัน, mobile app, iOS, Android",
+            "devops": "DevOps, CI/CD, deployment, automation",
+            "cybersecurity": "ความปลอดภัย, security, hacking, penetration testing",
+            "network_engineer": "เครือข่าย, network, infrastructure",
+
+            # Business & Finance
+            "business": "ธุรกิจ, การจัดการ, บริหาร, การตลาด",
+            "accountant": "นักบัญชี, บัญชี, การเงิน",
+            "auditor": "สอบบัญชี, audit, ตรวจสอบ",
+            "financial_analyst": "วิเคราะห์การเงิน, การเงิน, การลงทุน",
+            "marketing": "การตลาด, marketing, brand, digital marketing",
+            "hr": "ทรัพยากรบุคคล, HR, การบริหารงานบุคคล",
+            "entrepreneur": "ผู้ประกอบการ, startup, ธุรกิจส่วนตัว",
+            "investment_banker": "นักลงทุน, ธนาคารการลงทุน, investment",
+
+            # Education
+            "teacher": "ครู, การศึกษา, การสอน, อาจารย์",
+            "professor": "อาจารย์, มหาวิทยาลัย, สอน",
+            "researcher": "นักวิจัย, research, วิจัย",
+            "tutor": "ติวเตอร์, สอนพิเศษ",
+
+            # Creative & Design
             "designer": "นักออกแบบ, ดีไซน์, การออกแบบ",
+            "graphic_designer": "กราฟิกดีไซน์, ออกแบบกราฟิก",
+            "ux_ui_designer": "UX, UI, ออกแบบ interface, user experience",
+            "architect": "สถาปนิก, สถาปัตยกรรม, ออกแบบอาคาร",
+            "interior_designer": "ตกแต่งภายใน, interior design",
+            "animator": "แอนิเมชั่น, animation, 3D",
+            "video_editor": "ตัดต่อวิดีโอ, video editing",
+            "photographer": "ช่างภาพ, photography",
+
+            # Legal & Government
             "lawyer": "ทนายความ, นิติศาสตร์, กฎหมาย",
-            "accountant": "นักบัญชี, บัญชี, การเงิน"
+            "judge": "ผู้พิพากษา, ศาล, กฎหมาย",
+            "government_officer": "ข้าราชการ, ราชการ, ภาครัฐ",
+            "diplomat": "การทูต, ต่างประเทศ, diplomat",
+
+            # Science
+            "scientist": "นักวิทยาศาสตร์, วิทยาศาสตร์, วิจัย",
+            "biologist": "ชีววิทยา, biology, สิ่งมีชีวิต",
+            "chemist": "เคมี, chemistry, สารเคมี",
+            "physicist": "ฟิสิกส์, physics",
+
+            # Media & Communication
+            "journalist": "นักข่าว, สื่อมวลชน, journalism",
+            "content_creator": "ครีเอเตอร์, content, social media",
+            "public_relations": "ประชาสัมพันธ์, PR, communication",
+            "translator": "นักแปล, translator, ล่าม",
+
+            # Hospitality & Tourism
+            "chef": "เชฟ, ทำอาหาร, culinary",
+            "hotel_manager": "โรงแรม, hospitality",
+            "tour_guide": "ไกด์, นำเที่ยว, tourism",
+
+            # Other
+            "pilot": "นักบิน, การบิน, aviation",
+            "athlete": "นักกีฬา, กีฬา, sports",
+            "artist": "ศิลปิน, ศิลปะ, art",
+            "musician": "นักดนตรี, ดนตรี, music",
         }
 
         target_keywords = field_mapping.get(target_field, target_field)
 
-        prompt = f"""วิเคราะห์ portfolio ต่อไปนี้ว่าเหมาะสมกับสาขา "{target_field}" ({target_keywords}) หรือไม่
+        criteria_text = f"\n\nเกณฑ์การเลือกเพิ่มเติม: {judgment_criteria}" if judgment_criteria else ""
+
+        prompt = f"""วิเคราะห์ portfolio ต่อไปนี้ว่าเหมาะสมกับสาขา "{target_field}" ({target_keywords}) หรือไม่{criteria_text}
 
 ข้อความ portfolio:
 {text[:4000]}
@@ -277,11 +371,111 @@ class TyphoonAnalyzer:
                 recommendations=["Please try again"]
             )
 
+    async def _analyze_certificates(
+        self,
+        text: str,
+        target_field: str,
+        judgment_criteria: str = ""
+    ) -> List[Certificate]:
+        """
+        Analyze certificates and achievements in portfolio
+
+        Args:
+            text: Portfolio text
+            target_field: Target field/position
+            judgment_criteria: Custom selection criteria
+
+        Returns:
+            List of Certificate objects with importance rankings
+        """
+        criteria_text = f"\n\nเกณฑ์การเลือก: {judgment_criteria}" if judgment_criteria else ""
+
+        prompt = f"""วิเคราะห์ใบรับรอง, รางวัล, การแข่งขัน และผลงานที่กล่าวถึงใน portfolio นี้
+
+สาขาเป้าหมาย: {target_field}{criteria_text}
+
+ข้อความ portfolio:
+{text[:4000]}
+
+โปรดค้นหาและวิเคราะห์:
+1. ชื่อของใบรับรอง/รางวัล/การแข่งขัน/คอร์ส
+2. ความสำคัญต่อสาขาเป้าหมาย
+3. ความเกี่ยวข้อง (relevance score 0-1)
+4. คำแนะนำว่าควรแสดง, เน้น, หรือไม่แสดง
+
+กรุณาตอบกลับในรูปแบบ JSON:
+{{
+  "certificates": [
+    {{
+      "name": "ชื่อใบรับรอง/รางวัล",
+      "type": "certificate|competition|award|course",
+      "importance": "critical|high|medium|low",
+      "relevance_score": 0.9,
+      "reason": "เหตุผลว่าทำไมสำคัญ/ไม่สำคัญ",
+      "recommendation": "ควรเน้นในส่วนต้น|ควรแสดง|ไม่ควรแสดง"
+    }}
+  ]
+}}
+
+หมายเหตุ:
+- critical: สำคัญมาก เกี่ยวข้องโดยตรงกับสาขา
+- high: สำคัญ ช่วยเสริมความน่าเชื่อถือ
+- medium: ค่อนข้างสำคัญ ช่วยเสริม
+- low: ไม่ค่อยสำคัญ อาจเอาออกได้
+"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "คุณเป็นผู้เชี่ยวชาญการวิเคราะห์ portfolio ที่สามารถประเมินความสำคัญของใบรับรอง รางวัล และผลงาน โปรดวิเคราะห์และตอบกลับในรูปแบบ JSON เท่านั้น"
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.3,
+                max_tokens=2000
+            )
+
+            result_text = response.choices[0].message.content
+            logger.info(f"Certificate analysis response: {result_text[:200]}...")
+
+            result = self._parse_json_response(result_text)
+            certificates = []
+
+            for cert_data in result.get("certificates", []):
+                try:
+                    cert = Certificate(
+                        name=cert_data.get("name", "Unknown"),
+                        type=cert_data.get("type", "certificate"),
+                        importance=cert_data.get("importance", "medium"),
+                        relevance_score=cert_data.get("relevance_score", 0.5),
+                        reason=cert_data.get("reason", ""),
+                        recommendation=cert_data.get("recommendation", "ควรแสดง"),
+                        source_info=None  # Will be populated by web search if needed
+                    )
+                    certificates.append(cert)
+                except Exception as e:
+                    logger.warning(f"Could not parse certificate: {e}")
+
+            logger.info(f"Found {len(certificates)} certificates/achievements")
+            return certificates
+
+        except Exception as e:
+            logger.error(f"Certificate analysis error: {e}", exc_info=True)
+            return []
+
     async def _generate_summary(
         self,
         text: str,
         language_analysis: Dict,
-        field_analysis: FieldMatch
+        field_analysis: FieldMatch,
+        certificates: List[Certificate] = None,
+        judgment_criteria: str = ""
     ) -> Dict:
         """
         Generate overall summary of analysis
@@ -297,6 +491,7 @@ class TyphoonAnalyzer:
         num_issues = len(language_analysis["issues"])
         formality_score = language_analysis["formality_score"]
         matches = field_analysis.matches
+        certificates = certificates or []
 
         # Generate summary
         summary_parts = []
@@ -315,6 +510,13 @@ class TyphoonAnalyzer:
         else:
             summary_parts.append(f"❌ Portfolio อาจไม่สอดคล้องกับสาขา {field_analysis.target_field} (ความมั่นใจ {field_analysis.confidence:.0%})")
 
+        # Certificate summary
+        if certificates:
+            critical_count = sum(1 for c in certificates if c.importance == "critical")
+            high_count = sum(1 for c in certificates if c.importance == "high")
+            if critical_count > 0 or high_count > 0:
+                summary_parts.append(f"📜 พบใบรับรอง/รางวัลสำคัญ {critical_count + high_count} รายการ")
+
         summary = " | ".join(summary_parts)
 
         # Key findings
@@ -332,6 +534,19 @@ class TyphoonAnalyzer:
 
         if num_issues > 0:
             key_findings.append(f"พบจุดที่ควรปรับปรุง {num_issues} จุด")
+
+        # Certificate findings
+        if certificates:
+            critical_certs = [c for c in certificates if c.importance == "critical"]
+            if critical_certs:
+                key_findings.append(f"มีใบรับรอง/รางวัลสำคัญมาก: {', '.join([c.name for c in critical_certs[:2]])}")
+
+            low_certs = [c for c in certificates if c.importance == "low"]
+            if low_certs:
+                key_findings.append(f"มีใบรับรอง/รางวัลที่ไม่ค่อยเกี่ยวข้อง {len(low_certs)} รายการ")
+
+        if judgment_criteria:
+            key_findings.append(f"วิเคราะห์ตามเกณฑ์: {judgment_criteria[:50]}...")
 
         return {
             "summary": summary,

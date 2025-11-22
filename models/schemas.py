@@ -18,6 +18,17 @@ class LanguageIssue(BaseModel):
     context: Optional[str] = Field(None, description="Surrounding context")
 
 
+class Certificate(BaseModel):
+    """Represents a certificate or achievement found in portfolio"""
+    name: str = Field(..., description="Certificate/competition name")
+    type: str = Field(..., description="Type: 'certificate', 'competition', 'award', 'course'")
+    importance: str = Field(..., description="Importance level: 'critical', 'high', 'medium', 'low'")
+    relevance_score: float = Field(..., description="Relevance to target field (0-1)")
+    reason: str = Field(..., description="Why this is important/relevant")
+    recommendation: str = Field(..., description="Should it be included/highlighted/removed")
+    source_info: Optional[str] = Field(None, description="Web search result about this certificate")
+
+
 class FieldMatch(BaseModel):
     """Represents field/position matching analysis"""
     target_field: str = Field(..., description="The target field/position")
@@ -51,6 +62,12 @@ class AnalysisResult(BaseModel):
 
     # Field matching
     field_match: FieldMatch = Field(..., description="Field matching analysis")
+
+    # Certificate analysis
+    certificates: List[Certificate] = Field(
+        default_factory=list,
+        description="Certificates/achievements found and analyzed"
+    )
 
     # Summary
     summary: str = Field(..., description="Overall summary of the analysis")

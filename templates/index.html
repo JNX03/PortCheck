@@ -353,6 +353,102 @@
             display: block;
         }
 
+        .certificates-container {
+            margin-top: 20px;
+        }
+
+        .certificate-card {
+            background: #fff;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .certificate-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .certificate-card.critical {
+            border-left: 5px solid #28a745;
+            background: #f8fff9;
+        }
+
+        .certificate-card.high {
+            border-left: 5px solid #17a2b8;
+            background: #f8fcff;
+        }
+
+        .certificate-card.medium {
+            border-left: 5px solid #ffc107;
+            background: #fffef8;
+        }
+
+        .certificate-card.low {
+            border-left: 5px solid #dc3545;
+            background: #fff8f8;
+        }
+
+        .certificate-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .certificate-name {
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: #333;
+        }
+
+        .importance-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .importance-critical {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .importance-high {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .importance-medium {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .importance-low {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .certificate-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9ff;
+            border-radius: 4px;
+            font-size: 0.95rem;
+        }
+
+        .relevance-score {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #667eea;
+            color: white;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            margin-left: 10px;
+        }
+
         @media (max-width: 768px) {
             .header h1 {
                 font-size: 1.8rem;
@@ -388,6 +484,12 @@
                 <select id="targetField">
                     <option value="">กำลังโหลด...</option>
                 </select>
+            </div>
+
+            <div class="form-group">
+                <label for="judgmentCriteria">เกณฑ์การเลือก (ไม่บังคับ):</label>
+                <textarea id="judgmentCriteria" rows="4" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 1rem; font-family: inherit; resize: vertical;" placeholder="ระบุเกณฑ์การเลือกเพิ่มเติม เช่น:&#10;- ต้องการผู้ที่มีประสบการณ์ด้าน AI/Machine Learning&#10;- ต้องมีทักษะการทำงานเป็นทีม&#10;- ควรมีใบรับรองด้าน..."></textarea>
+                <p style="font-size: 0.9rem; color: #666; margin-top: 5px;">💡 ใส่เกณฑ์การคัดเลือกเพิ่มเติมเพื่อให้การวิเคราะห์ตรงกับความต้องการมากขึ้น</p>
             </div>
 
             <div id="selectedFile" style="margin: 20px 0; display: none;">
@@ -438,6 +540,9 @@
             <h3 class="section-title">💡 ข้อค้นพบสำคัญ</h3>
             <ul class="findings-list" id="keyFindings"></ul>
 
+            <h3 class="section-title">📜 ใบรับรอง / รางวัล / ผลงาน</h3>
+            <div class="certificates-container" id="certificatesContainer"></div>
+
             <h3 class="section-title">⚠️ จุดที่ควรปรับปรุง (ภาษาพูด/ไม่เป็นทางการ)</h3>
             <div class="issues-container" id="issuesContainer"></div>
         </div>
@@ -463,12 +568,44 @@
                 const data = await response.json();
 
                 targetFieldSelect.innerHTML = '<option value="">-- เลือกสาขาอาชีพ --</option>';
+
+                // Group fields by category
+                const categories = {
+                    'medical': '🏥 แพทย์และสุขภาพ',
+                    'engineering': '⚙️ วิศวกรรม',
+                    'it': '💻 IT และคอมพิวเตอร์',
+                    'business': '💼 ธุรกิจและการเงิน',
+                    'education': '📚 การศึกษา',
+                    'creative': '🎨 สร้างสรรค์และดีไซน์',
+                    'legal': '⚖️ กฎหมายและราชการ',
+                    'science': '🔬 วิทยาศาสตร์',
+                    'media': '📱 สื่อและการสื่อสาร',
+                    'hospitality': '🍽️ การบริการและการท่องเที่ยว',
+                    'other': '🌟 อื่นๆ'
+                };
+
+                const grouped = {};
                 data.fields.forEach(field => {
-                    const option = document.createElement('option');
-                    option.value = field.value;
-                    option.textContent = field.label;
-                    targetFieldSelect.appendChild(option);
+                    if (!grouped[field.category]) {
+                        grouped[field.category] = [];
+                    }
+                    grouped[field.category].push(field);
                 });
+
+                // Add optgroups
+                for (const [category, label] of Object.entries(categories)) {
+                    if (grouped[category]) {
+                        const optgroup = document.createElement('optgroup');
+                        optgroup.label = label;
+                        grouped[category].forEach(field => {
+                            const option = document.createElement('option');
+                            option.value = field.value;
+                            option.textContent = field.label;
+                            optgroup.appendChild(option);
+                        });
+                        targetFieldSelect.appendChild(optgroup);
+                    }
+                }
             } catch (error) {
                 console.error('Error loading fields:', error);
                 targetFieldSelect.innerHTML = '<option value="">Error loading fields</option>';
@@ -551,6 +688,7 @@
             const formData = new FormData();
             formData.append('file', selectedFile);
             formData.append('target_field', targetFieldSelect.value);
+            formData.append('judgment_criteria', document.getElementById('judgmentCriteria').value || '');
 
             try {
                 const response = await fetch('/api/analyze', {
@@ -588,6 +726,9 @@
 
             // Key findings
             displayKeyFindings(data.key_findings);
+
+            // Certificates
+            displayCertificates(data.certificates || []);
 
             // Language issues
             displayLanguageIssues(data.language_issues);
@@ -651,6 +792,76 @@
             }
 
             container.innerHTML = findings.map(f => `<li>${f}</li>`).join('');
+        }
+
+        function displayCertificates(certificates) {
+            const container = document.getElementById('certificatesContainer');
+
+            if (!certificates || certificates.length === 0) {
+                container.innerHTML = `
+                    <div class="no-issues">
+                        <div class="no-issues-icon">📜</div>
+                        <p>ไม่พบใบรับรอง รางวัล หรือผลงานที่ระบุไว้ในเอกสาร</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Sort by importance
+            const importanceOrder = {'critical': 1, 'high': 2, 'medium': 3, 'low': 4};
+            certificates.sort((a, b) => importanceOrder[a.importance] - importanceOrder[b.importance]);
+
+            container.innerHTML = certificates.map(cert => `
+                <div class="certificate-card ${cert.importance}">
+                    <div class="certificate-header">
+                        <div>
+                            <span class="certificate-name">${cert.name}</span>
+                            <span class="relevance-score">${(cert.relevance_score * 100).toFixed(0)}%</span>
+                        </div>
+                        <span class="importance-badge importance-${cert.importance}">
+                            ${getImportanceText(cert.importance)}
+                        </span>
+                    </div>
+
+                    <div style="margin: 10px 0;">
+                        <strong>ประเภท:</strong> ${getCertificateTypeText(cert.type)}
+                    </div>
+
+                    <div class="certificate-info">
+                        <strong>📌 เหตุผล:</strong> ${cert.reason}
+                    </div>
+
+                    <div style="margin-top: 10px; padding: 10px; background: #e8f4ff; border-radius: 4px;">
+                        <strong>💡 คำแนะนำ:</strong> ${cert.recommendation}
+                    </div>
+
+                    ${cert.source_info ? `
+                        <div style="margin-top: 10px; padding: 8px; background: #f0f0f0; border-radius: 4px; font-size: 0.85rem;">
+                            <strong>ℹ️ ข้อมูล:</strong> ${cert.source_info}
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        }
+
+        function getImportanceText(importance) {
+            const texts = {
+                'critical': 'สำคัญมาก',
+                'high': 'สำคัญ',
+                'medium': 'ปานกลาง',
+                'low': 'ไม่สำคัญ'
+            };
+            return texts[importance] || importance;
+        }
+
+        function getCertificateTypeText(type) {
+            const texts = {
+                'certificate': 'ใบรับรอง',
+                'competition': 'การแข่งขัน',
+                'award': 'รางวัล',
+                'course': 'หลักสูตร/คอร์ส'
+            };
+            return texts[type] || type;
         }
 
         function displayLanguageIssues(issues) {
